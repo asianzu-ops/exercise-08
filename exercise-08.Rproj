@@ -1,0 +1,253 @@
+---
+title: "exercise-08"
+format: html
+editor: visual
+---
+
+#Step 1: Loading the files
+```{r}
+library(tidyverse)
+
+f<- "https://raw.githubusercontent.com/difiore/ada-datasets/main/Street_et_al_2017.csv"
+d<- read.csv(f, header=TRUE)
+d<- as_tibble(d)
+d
+
+library(skimr)
+install.packages("skimr")
+
+print(skim(d))
+
+
+```
+
+#Step 2: Plotting variables
+
+```{r}
+library(ggplot2)
+
+ggplot(d, aes(x= Group_size, y= ECV)) +
+         geom_point()+
+         labs(x="Social Group Size", y= "Brain size (ECV)")+
+         theme_minimal()
+
+ggplot(d, aes(x= Longevity, y=ECV)) + 
+          geom_point()+
+          labs(x="longevity", y= "Brain size (ECV")+
+          theme_minimal()
+
+ggplot(d, aes(x= Weaning, y=ECV)) + 
+          geom_point()+
+          labs(x="Juvenile period length", y= "Brain size (ECV")+
+          theme_minimal()
+
+ggplot(d, aes(x= Repro_lifespan, y=ECV)) + 
+          geom_point()+
+          labs(x="Reproductive Lifespan", y= "Brain size (ECV")+
+          theme_minimal()
+
+
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).
+
+#Step 3: Ordinary least square regression by hand
+```{r}
+library(dplyr)
+
+clean_d <- d |> drop_na(ECV, Group_size)
+clean_d
+
+m1<- mean(clean_d$Group_size)
+m2<- mean(clean_d$ECV)
+m1
+m2
+
+beta1<-sum((clean_d$Group_size-m1)*(clean_d$ECV-m2)/
+             sum((clean_d$Group_size-m1)^2))
+             
+beta1
+
+
+beta0 <- (m2 - beta1 * m1)
+
+beta0
+
+```
+
+
+
+
+#Step 4:Confirming with lm function
+
+```{r}
+
+m <- lm(ECV ~ Group_size, data = d)
+m
+summary(m)
+
+```
+
+
+
+
+
+
+
+
+
+#Step 5:OLS Regressions by taxonomic group
+```{r}
+
+library(dplyr)
+
+catarrhini <- clean_d |> filter(Taxonomic_group == "Catarrhini") |> drop_na(ECV, Group_size)
+nrow(catarrhini)
+
+m1_cat <- mean(catarrhini$Group_size)
+m2_cat <- mean(catarrhini$ECV)
+
+
+beta1_cat <- sum((catarrhini$Group_size - m1_cat) * (catarrhini$ECV - m2_cat)) / 
+             sum((catarrhini$Group_size - m1_cat)^2)
+
+
+beta0_cat <- m2_cat - beta1_cat * m1_cat
+
+cat("Catarrhini: Intercept =", beta0_cat, "Slope =", beta1_cat, "\n")
+
+
+# Platyrrhini
+Platyrrhini_d <- clean_d |> filter(Taxonomic_group == "Platyrrhini") |> drop_na(ECV, Group_size)
+
+
+m1_plat <- mean(Platyrrhini_d$Group_size)
+m2_plat <- mean(Platyrrhini_d$ECV)
+
+beta1_plat <- sum((Platyrrhini_d$Group_size - m1_plat) * (Platyrrhini_d$ECV - m2_plat)) / 
+              sum((Platyrrhini_d$Group_size - m1_plat)^2)
+
+beta0_plat <- m2_plat - beta1_plat * m1_plat
+
+cat("Platyrrhini: Intercept =", beta0_plat, "Slope =", beta1_plat, "\n")
+
+
+
+# Strepsirrhini
+Strepsirhini_d <- clean_d |> filter(Taxonomic_group == "Strepsirhini") |> drop_na(ECV, Group_size)
+
+
+m1_strep <- mean(Strepsirhini_d$Group_size)
+m2_strep <- mean(Strepsirhini_d$ECV)
+
+
+beta1_strep <- sum((Strepsirhini_d$Group_size - m1_strep) * (Strepsirhini_d$ECV - m2_strep)) / 
+               sum((Strepsirhini_d$Group_size - m1_strep)^2)
+
+beta0_strep <- m2_strep - beta1_strep * m1_strep
+
+cat("Strepsirhini: Intercept =", beta0_strep, "Slope =", beta1_strep, "\n")
+
+```
+#Step 5 Answer; we can determine the difference by calculating the confidence interval for each primate group or visually observing in a scatter plot. 
+
+#Step 6: SE, Slope coefficient, p value
+```{r}
+
+clean_d$predicted_ECV <- beta0 + beta1 * clean_d$Group_size
+
+residuals <- clean_d$ECV - clean_d$predicted_ECV
+SSR <- sum(residuals^2)
+SSX <- sum((clean_d$Group_size - m1)^2)
+
+
+SE_beta1 <- sqrt(SSR / ((nrow(clean_d) - 2) * SSX))
+t_stat <- beta1 / SE_beta1
+df <- nrow(clean_d) - 2
+
+t_critical <- qt(0.975, df)
+
+
+CI_lower <- beta1 - t_critical * SE_beta1
+CI_upper <- beta1 + t_critical * SE_beta1
+
+SE_beta1
+t_stat
+CI_lower
+CI_upper
+
+
+# Confirming using lm
+lm_model <- lm(ECV ~ Group_size, data = clean_d)
+
+summary(lm_model)
+
+```
+
+#Step 7:Permutations for null sampling distribution
+Permute the ECV values and keep the Group_size fixed to break the relationship. The p value associated with the slope coefficient(2.463071) is 7.26e-11
+```{r}
+
+library(mosaic)  
+library(broom)   
+library(dplyr)  
+
+nperm <- 1000  
+
+original_model <- lm(ECV ~ Group_size, data = clean_d)
+original_slope <- tidy(original_model) |> filter(term == "Group_size") |> pull(estimate)
+
+perm <- do(nperm) * {
+  d_new <- clean_d
+  d_new$ECV <- sample(d_new$ECV)  
+  m <- lm(ECV ~ Group_size, data = d_new)
+  tidy(m) |> filter(term == "Group_size") |> pull(estimate)  
+}
+
+null_distribution <- perm$result
+
+p_value <- mean(abs(null_distribution) >= abs(original_slope))
+
+se_perm <- sd(null_distribution)
+
+cat("Original slope coefficient:", original_slope, "\n")
+cat("P-value from permutation test:", p_value, "\n")
+cat("Standard error from permutation distribution:", se_perm, "\n")
+
+```
+
+
+
+#Step 8:Bootstrapping for CI
+```{r}
+
+set.seed(123)  
+n_bootstraps <- 1000
+boot_slopes <- numeric(n_bootstraps)
+
+for (i in 1:n_bootstraps) {
+  boot_sample <- clean_d[sample(nrow(clean_d), replace = TRUE), ]  
+  boot_model <- lm(ECV ~ Group_size, data = boot_sample)
+  boot_slopes[i] <- coef(boot_model)[2]
+}
+
+CI_lower_quantile <- quantile(boot_slopes, 0.025) 
+CI_upper_quantile <- quantile(boot_slopes, 0.975)
+
+
+SE_boot <- sd(boot_slopes)  
+CI_lower_theory <- mean(boot_slopes) - 1.96 * SE_boot
+CI_upper_theory <- mean(boot_slopes) + 1.96 * SE_boot
+
+# Output results
+cat("Bootstrapped 95% CI (Quantile Method): [", CI_lower_quantile, ",", CI_upper_quantile, "]\n")
+cat("Bootstrapped 95% CI (Theory-Based Method): [", CI_lower_theory, ",", CI_upper_theory, "]\n")
+
+```
+
+#the bootstrapped 95% confidence intervals (CIs) suggest that the slope coefficient is different from zero (0).The Quantile Method CI: [1.40735, 3.270864]
+and Theory-Based Method CI: [1.463965, 3.346603]
+
+
+
+
